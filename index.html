@@ -2,86 +2,99 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>🚀 NWR3v2 Claim Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NWR5 Staking Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
-    body { background:#111; color:#afa; font-family:sans-serif; text-align:center; padding:50px; }
-    button { padding:12px 24px; font-size:1rem; margin:10px; border:none; border-radius:6px; cursor:pointer; }
-    #connect { background:#1E90FF; color:#fff; }
-    #claim   { background:#28a745; color:#fff; }
-    #status  { margin-top:20px; font-size:1.1rem; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      background: #f7f7f7;
+      color: #333;
+    }
+    .card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin-bottom: 1rem;
+    }
+    h1 {
+      color: #4a90e2;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background: #4a90e2;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
-  <h1>🚀 NWR3v2 Claim Portal</h1>
-  <button id="connect">Connect MetaMask</button><br>
-  <button id="claim" disabled>💧 Claim Now</button>
-  <div id="status"></div>
+  <h1>NWR5 Staking Live Dashboard</h1>
 
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+  <div class="card">
+    <h3>💰 NWR4 Balance in Contract:</h3>
+    <p id="nwr4Balance">Loading...</p>
+  </div>
+
+  <div class="card">
+    <h3>⚖️ Total Pending Rewards (NWR4):</h3>
+    <p id="pendingTotal">Loading...</p>
+  </div>
+
+  <div class="card">
+    <h3>🧾 Your Claimable NWR4:</h3>
+    <p id="yourPending">Connect wallet to view</p>
+    <button onclick="connectWallet()">Connect Wallet</button>
+  </div>
 
   <script>
-    (async () => {
-      const CONTRACT_ADDRESS = "0xe830ebbDC2E201Dc1b3e96Fb3a0cbfd0e5215F48";
-      const ABI = ["function claim() external", "function lastClaim(address) view returns (uint256)"];
-      const connectBtn = document.getElementById("connect");
-      const claimBtn   = document.getElementById("claim");
-      const statusTxt  = document.getElementById("status");
+    const stakingAddress = "0x777DdC0a2e8adD79aE8D4d7ff1dB276758C66889";
+    const nwr4Address = "0x380D1522b426ae8a95D58203Ce1A12127eC201cf";
 
-      let provider, signer, contract;
+    const stakingABI = [
+      "function pendingRewards(address) view returns (uint256)",
+      "function rewardEnabled() view returns (bool)"
+    ];
 
-      connectBtn.onclick = async () => {
-        try {
-          if (!window.ethereum) throw new Error("MetaMask not found");
-          provider = new ethers.BrowserProvider(window.ethereum);
-          await provider.send("eth_requestAccounts", []);
-          signer = await provider.getSigner();
-          contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-          connectBtn.disabled = true;
-          connectBtn.textContent = "✅ Connected";
-          claimBtn.disabled = false;
-          updateStatus();
-        } catch (err) {
-          statusTxt.textContent = "Connection error: " + (err.message || err);
-        }
-      };
+    const erc20ABI = [
+      "function balanceOf(address) view returns (uint256)",
+      "function decimals() view returns (uint8)"
+    ];
 
-      claimBtn.onclick = async () => {
-        if (!contract) return statusTxt.textContent = "Connect first!";
-        try {
-          claimBtn.disabled = true;
-          statusTxt.textContent = "⏳ Processing...";
-          const tx = await contract.claim();
-          await tx.wait();
-          statusTxt.textContent = "✅ Claimed successfully!";
-        } catch (err) {
-          statusTxt.textContent = "❌ Claim failed: " + (err.message || err);
-        } finally {
-          updateStatus();
-        }
-      };
+    let provider;
+    let signer;
 
-      async function updateStatus() {
-        if (!contract || !signer) return;
-        try {
-          const addr = await signer.getAddress();
-          const last = await contract.lastClaim(addr);
-          const elapsed = Math.floor(Date.now()/1000) - Number(last);
-          if (elapsed < 60) {
-            statusTxt.textContent = `Next claim in ~${60 - elapsed}s`;
-            claimBtn.disabled = true;
-          } else {
-            statusTxt.textContent = "You can claim now!";
-            claimBtn.disabled = false;
-          }
-        } catch (e) {
-          console.log(e);
-        }
-      }
+    async function loadData() {
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      const nwr4 = new ethers.Contract(nwr4Address, erc20ABI, provider);
+      const staking = new ethers.Contract(stakingAddress, stakingABI, provider);
 
-      setInterval(() => {
-        updateStatus();
-      }, 5000);
-    })();
+      const balance = await nwr4.balanceOf(stakingAddress);
+      const decimals = await nwr4.decimals();
+      const formatted = ethers.utils.formatUnits(balance, decimals);
+      document.getElementById("nwr4Balance").textContent = `${formatted} NWR4`;
+
+      // If you want to compute totalPending for many users, you need off-chain indexing.
+      document.getElementById("pendingTotal").textContent = `Use distributePending() to reveal per-user totals`;
+    }
+
+    async function connectWallet() {
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      const user = await signer.getAddress();
+
+      const staking = new ethers.Contract(stakingAddress, stakingABI, provider);
+      const rawPending = await staking.pendingRewards(user);
+      const formatted = ethers.utils.formatEther(rawPending);
+      document.getElementById("yourPending").textContent = `${formatted} NWR4`;
+    }
+
+    loadData();
   </script>
 </body>
 </html>
